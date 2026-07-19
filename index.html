@@ -1,111 +1,70 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Zarza Cloud</title>
-
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
-
-<style>
-* { box-sizing: border-box; margin:0; padding:0; }
-
-body {
-  font-family: "Inter", sans-serif;
-  background: #0f1115;
-  color: #e6e6e6;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.container {
-  margin: auto;
-  text-align: center;
-  max-width: 900px;
-  padding: 40px 20px;
-}
-
-h1 {
-  font-size: 3rem;
-  font-weight: 600;
-  letter-spacing: 2px;
-  margin-bottom: 10px;
-}
-
-.subtitle {
-  color: #9aa4b2;
-  margin-bottom: 50px;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit,minmax(220px,1fr));
-  gap: 25px;
-}
-
-.card {
-  background: #161a22;
-  padding: 30px;
-  border-radius: 16px;
-  text-decoration: none;
-  color: white;
-  transition: .25s;
-  border: 1px solid #222834;
-}
-
-.card:hover {
-  transform: translateY(-6px);
-  border-color: #3b82f6;
-  box-shadow: 0 10px 30px rgba(0,0,0,.4);
-}
-
-.icon {
-  font-size: 2.5rem;
-  margin-bottom: 15px;
-}
-
-.title {
-  font-size: 1.2rem;
-  font-weight: 600;
-}
-
-.footer {
-  text-align: center;
-  color: #6b7280;
-  font-size: 0.8rem;
-  padding: 20px;
-}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#000804">
+  <meta name="description" content="Zarza">
+  <title>zarza</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000804; }
+    canvas { display: block; width: 100%; height: 100%; }
+    #gateway { position: fixed; z-index: 1; display: block; color: transparent; text-decoration: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    #gateway:focus-visible { outline: 1px solid #8dffab; outline-offset: 9px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+  </style>
 </head>
-
 <body>
-  <div class="container">
-    <h1>Zarza.Cloud</h1>
-    <div class="subtitle">Private family cloud</div>
+  <canvas id="rain" aria-hidden="true"></canvas>
+  <a id="gateway" href="https://agent.zarza.cloud" aria-label="Open Zarza"><span class="sr-only">Open Zarza</span></a>
+  <script>
+    (() => {
+      const canvas = document.querySelector('#rain');
+      const ctx = canvas.getContext('2d');
+      const gateway = document.querySelector('#gateway');
+      const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+      const glyphs = 'ZARZA0123456789<>[]{}()=+*:/\\|;,.~!@#$%^&?アイウエオカキクケコサシスセソ你好世界天地人語文ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩЖДИЙКЛМНОПРСТУФХЦЧШЩЫЭЮЯ';
+      let w, h, dpr, size, streams, mask, maskW, maskH, hover = false, previous = 0;
 
-    <div class="grid">
+      const glyph = () => glyphs[Math.floor(Math.random() * glyphs.length)];
+      const inWord = (x, y) => {
+        const px = Math.max(0, Math.min(maskW - 1, Math.round(x)));
+        const py = Math.max(0, Math.min(maskH - 1, Math.round(y)));
+        return mask && mask[(py * maskW + px) * 4 + 3] > 16;
+      };
 
-      <a class="card" href="https://photos.zarza.cloud">
-        <div class="icon">📸</div>
-        <div class="title">Photos</div>
-      </a>
+      function resize() {
+        dpr = Math.min(devicePixelRatio || 1, 2); w = innerWidth; h = innerHeight;
+        canvas.width = w * dpr; canvas.height = h * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        size = Math.max(12, Math.min(22, Math.round(w / 72)));
+        streams = Array.from({ length: Math.ceil(w / size) + 1 }, (_, i) => ({ x: i * size, y: Math.random() * h, speed: size * (.72 + Math.random() * 1.35), hue: 130 + Math.random() * 15 }));
+        const off = document.createElement('canvas'); off.width = w; off.height = h; const o = off.getContext('2d', { willReadFrequently: true });
+        const wordW = Math.min(w * .82, 1120), wordH = Math.min(h * .28, wordW * .22), x = (w - wordW) / 2, y = (h - wordH) / 2;
+        o.fillStyle = '#fff'; o.textAlign = 'center'; o.textBaseline = 'middle'; o.font = '900 ' + Math.round(wordH * .93) + 'px Arial Black, Arial, sans-serif'; o.fillText('zarza', w / 2, y + wordH * .54);
+        mask = o.getImageData(0, 0, w, h).data; maskW = w; maskH = h;
+        Object.assign(gateway.style, { left: x + 'px', top: y + 'px', width: wordW + 'px', height: wordH + 'px' });
+      }
 
-      <a class="card" href="https://drive.zarza.cloud">
-        <div class="icon">☁️</div>
-        <div class="title">Drive</div>
-      </a>
+      function draw(now) {
+        const delta = Math.min(42, Math.max(10, now - previous || 16)); previous = now;
+        ctx.fillStyle = 'rgba(0,8,4,' + (reduced.matches ? '.94' : '.15') + ')'; ctx.fillRect(0, 0, w, h);
+        ctx.font = size + 'px ui-monospace, SFMono-Regular, Consolas, monospace'; ctx.textBaseline = 'top';
+        const focus = hover ? 1 : .42;
+        for (const s of streams) {
+          const inside = inWord(s.x + size * .45, s.y + size * .5), head = Math.random() > .16;
+          ctx.fillStyle = inside ? 'hsla(' + (132 + focus * 12) + ',100%,' + (64 + focus * 22) + '%,' + (head ? .72 + focus * .27 : .25 + focus * .22) + ')' : (head ? 'hsla(' + s.hue + ',86%,47%,.48)' : 'hsla(' + s.hue + ',72%,28%,.26)');
+          ctx.fillText(glyph(), s.x, s.y);
+          if (!reduced.matches) { s.y += s.speed * delta / 1000; if (s.y > h + size) { s.y = -size * (1 + Math.random() * 14); s.speed = size * (.72 + Math.random() * 1.35); } }
+        }
+        if (!reduced.matches) requestAnimationFrame(draw);
+      }
 
-      <a class="card" href="https://plex.zarza.cloud">
-        <div class="icon">🎬</div>
-        <div class="title">Plex</div>
-      </a>
-
-    </div>
-  </div>
-
-  <div class="footer">
-    Zarza Cloud • Self-Hosted • Private • Fuck Off
-  </div>
+      gateway.addEventListener('pointerenter', () => hover = true); gateway.addEventListener('pointerleave', () => hover = false);
+      gateway.addEventListener('focus', () => hover = true); gateway.addEventListener('blur', () => hover = false);
+      addEventListener('resize', resize, { passive: true });
+      resize(); requestAnimationFrame(draw);
+    })();
+  </script>
 </body>
 </html>
