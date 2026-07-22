@@ -8,62 +8,275 @@
   <title>zarza</title>
   <style>
     * { box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000804; }
-    canvas { display: block; width: 100%; height: 100%; }
-    #gateway { position: fixed; z-index: 1; display: block; color: transparent; text-decoration: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-    #gateway:focus-visible { outline: 1px solid #8dffab; outline-offset: 9px; }
-    .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #000804;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    #gateway {
+      position: fixed;
+      z-index: 1;
+      display: block;
+      color: transparent;
+      text-decoration: none;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #gateway:focus-visible {
+      outline: 1px solid #8dffab;
+      outline-offset: 10px;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
   <canvas id="rain" aria-hidden="true"></canvas>
-  <a id="gateway" href="https://agent.zarza.cloud" aria-label="Open Zarza"><span class="sr-only">Open Zarza</span></a>
+
+  <a
+    id="gateway"
+    href="https://zarza-cloud.cloudflareaccess.com/#/Launcher"
+    aria-label="Open Zarza"
+  >
+    <span class="sr-only">Open Zarza</span>
+  </a>
+
   <script>
     (() => {
-      const canvas = document.querySelector('#rain');
-      const ctx = canvas.getContext('2d');
-      const gateway = document.querySelector('#gateway');
-      const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-      const glyphs = 'ZARZA0123456789<>[]{}()=+*:/\\|;,.~!@#$%^&?アイウエオカキクケコサシスセソ你好世界天地人語文ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩЖДИЙКЛМНОПРСТУФХЦЧШЩЫЭЮЯ';
-      let w, h, dpr, size, streams, mask, maskW, maskH, hover = false, previous = 0;
+      const canvas = document.querySelector("#rain");
+      const ctx = canvas.getContext("2d");
+      const gateway = document.querySelector("#gateway");
+      const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 
-      const glyph = () => glyphs[Math.floor(Math.random() * glyphs.length)];
-      const inWord = (x, y) => {
-        const px = Math.max(0, Math.min(maskW - 1, Math.round(x)));
-        const py = Math.max(0, Math.min(maskH - 1, Math.round(y)));
-        return mask && mask[(py * maskW + px) * 4 + 3] > 16;
-      };
+      const glyphs =
+        "ZARZA0123456789<>[]{}()=+*:/\\|;,.~!@#$%^&?アイウエオカキクケコサシスセソ你好世界天地人語文ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩЖДИЙКЛМНОПРСТУФХЦЧШЩЫЭЮЯ";
+
+      let width, height, dpr;
+      let streams = [];
+      let wordMask, maskWidth, maskHeight;
+      let wordBounds;
+      let hover = false;
+      let previousTime = 0;
+      let startedAt = 0;
+      let animationFrame;
+
+      const randomGlyph = () =>
+        glyphs[Math.floor(Math.random() * glyphs.length)];
+
+      const clamp = (value, min, max) =>
+        Math.max(min, Math.min(max, value));
+
+      function maskAlphaAt(x, y) {
+        if (!wordMask) return 0;
+
+        const px = clamp(Math.round(x), 0, maskWidth - 1);
+        const py = clamp(Math.round(y), 0, maskHeight - 1);
+
+        return wordMask[(py * maskWidth + px) * 4 + 3];
+      }
+
+      function isInsideWord(x, y) {
+        return maskAlphaAt(x, y) > 20;
+      }
+
+      function createStream(index, spacing) {
+        const depth = Math.random();
+        const size = Math.round(9 + depth * 16);
+        const laneJitter = (Math.random() - 0.5) * spacing * 0.7;
+
+        return {
+          x: index * spacing + laneJitter,
+          y: Math.random() * (height + 260) - 180,
+          size,
+          speed: size * (0.9 + depth * 2.4),
+          trail: Math.round(7 + depth * 18),
+          gap: size * (0.82 + Math.random() * 0.45),
+          opacity: 0.18 + depth * 0.55,
+          blur: depth < 0.28 ? 1.3 : depth < 0.55 ? 0.45 : 0,
+          hue: 124 + Math.random() * 26,
+          phase: Math.random() * Math.PI * 2
+        };
+      }
+
+      function buildWordMask() {
+        const offscreen = document.createElement("canvas");
+        offscreen.width = width;
+        offscreen.height = height;
+
+        const off = offscreen.getContext("2d", { willReadFrequently: true });
+        const wordWidth = Math.min(width * 0.82, 1120);
+        const fontSize = Math.min(height * 0.29, wordWidth * 0.235);
+        const x = (width - wordWidth) / 2;
+        const y = (height - fontSize) / 2;
+
+        off.fillStyle = "#fff";
+        off.textAlign = "center";
+        off.textBaseline = "middle";
+        off.font = `900 ${Math.round(fontSize)}px Arial Black, Arial, sans-serif`;
+        off.fillText("zarza", width / 2, height / 2 + fontSize * 0.035);
+
+        wordMask = off.getImageData(0, 0, width, height).data;
+        maskWidth = width;
+        maskHeight = height;
+        wordBounds = { x, y, width: wordWidth, height: fontSize };
+
+        Object.assign(gateway.style, {
+          left: `${x}px`,
+          top: `${y}px`,
+          width: `${wordWidth}px`,
+          height: `${fontSize}px`
+        });
+      }
 
       function resize() {
-        dpr = Math.min(devicePixelRatio || 1, 2); w = innerWidth; h = innerHeight;
-        canvas.width = w * dpr; canvas.height = h * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        size = Math.max(12, Math.min(22, Math.round(w / 72)));
-        streams = Array.from({ length: Math.ceil(w / size) + 1 }, (_, i) => ({ x: i * size, y: Math.random() * h, speed: size * (.72 + Math.random() * 1.35), hue: 130 + Math.random() * 15 }));
-        const off = document.createElement('canvas'); off.width = w; off.height = h; const o = off.getContext('2d', { willReadFrequently: true });
-        const wordW = Math.min(w * .82, 1120), wordH = Math.min(h * .28, wordW * .22), x = (w - wordW) / 2, y = (h - wordH) / 2;
-        o.fillStyle = '#fff'; o.textAlign = 'center'; o.textBaseline = 'middle'; o.font = '900 ' + Math.round(wordH * .93) + 'px Arial Black, Arial, sans-serif'; o.fillText('zarza', w / 2, y + wordH * .54);
-        mask = o.getImageData(0, 0, w, h).data; maskW = w; maskH = h;
-        Object.assign(gateway.style, { left: x + 'px', top: y + 'px', width: wordW + 'px', height: wordH + 'px' });
-      }
+        dpr = Math.min(window.devicePixelRatio || 1, 2);
+        width = window.innerWidth;
+        height = window.innerHeight;
 
-      function draw(now) {
-        const delta = Math.min(42, Math.max(10, now - previous || 16)); previous = now;
-        ctx.fillStyle = 'rgba(0,8,4,' + (reduced.matches ? '.94' : '.15') + ')'; ctx.fillRect(0, 0, w, h);
-        ctx.font = size + 'px ui-monospace, SFMono-Regular, Consolas, monospace'; ctx.textBaseline = 'top';
-        const focus = hover ? 1 : .42;
-        for (const s of streams) {
-          const inside = inWord(s.x + size * .45, s.y + size * .5), head = Math.random() > .16;
-          ctx.fillStyle = inside ? 'hsla(' + (132 + focus * 12) + ',100%,' + (64 + focus * 22) + '%,' + (head ? .72 + focus * .27 : .25 + focus * .22) + ')' : (head ? 'hsla(' + s.hue + ',86%,47%,.48)' : 'hsla(' + s.hue + ',72%,28%,.26)');
-          ctx.fillText(glyph(), s.x, s.y);
-          if (!reduced.matches) { s.y += s.speed * delta / 1000; if (s.y > h + size) { s.y = -size * (1 + Math.random() * 14); s.speed = size * (.72 + Math.random() * 1.35); } }
+        canvas.width = Math.round(width * dpr);
+        canvas.height = Math.round(height * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        const spacing = clamp(Math.round(width / 118), 8, 15);
+        const streamCount = Math.ceil(width / spacing) + 4;
+
+        streams = Array.from({ length: streamCount }, (_, index) =>
+          createStream(index - 2, spacing)
+        );
+
+        buildWordMask();
+
+        if (reducedMotion.matches) {
+          draw(0, true);
         }
-        if (!reduced.matches) requestAnimationFrame(draw);
       }
 
-      gateway.addEventListener('pointerenter', () => hover = true); gateway.addEventListener('pointerleave', () => hover = false);
-      gateway.addEventListener('focus', () => hover = true); gateway.addEventListener('blur', () => hover = false);
-      addEventListener('resize', resize, { passive: true });
-      resize(); requestAnimationFrame(draw);
+      function wordProgress(now) {
+        if (reducedMotion.matches) return 1;
+
+        const delay = 1400;
+        const duration = 2400;
+        return clamp((now - startedAt - delay) / duration, 0, 1);
+      }
+
+      function drawStream(stream, delta, reveal) {
+        const drift = Math.sin((previousTime / 1000) * 0.7 + stream.phase) * 1.2;
+        const headY = stream.y;
+        const focus = hover ? 1 : 0;
+
+        ctx.font = `${stream.size}px ui-monospace, SFMono-Regular, Consolas, monospace`;
+        ctx.textBaseline = "top";
+        ctx.filter = stream.blur ? `blur(${stream.blur}px)` : "none";
+
+        for (let i = 0; i < stream.trail; i++) {
+          const y = headY - i * stream.gap;
+          if (y < -stream.size || y > height + stream.size) continue;
+
+          const tailFade = Math.pow(1 - i / stream.trail, 1.65);
+          const x = stream.x + drift + Math.sin(i * 1.7 + stream.phase) * 0.45;
+          const insideWord = isInsideWord(x + stream.size * 0.45, y + stream.size * 0.5);
+
+          let alpha = stream.opacity * tailFade;
+          let lightness = 28 + tailFade * 35;
+
+          if (insideWord && reveal > 0) {
+            const noise = (
+              Math.sin(x * 0.073 + y * 0.041) +
+              Math.sin(x * 0.019 - y * 0.09)
+            ) * 0.25 + 0.5;
+
+            const materialized = clamp((reveal - noise * 0.52) * 2.2, 0, 1);
+
+            alpha = Math.max(alpha, 0.3 + materialized * (0.52 + focus * 0.18));
+            lightness = 56 + materialized * 34;
+          }
+
+          if (i === 0) {
+            alpha = Math.min(1, alpha + 0.2);
+            lightness = Math.min(94, lightness + 18);
+          }
+
+          ctx.fillStyle =
+            `hsla(${stream.hue + (insideWord ? 7 : 0)}, 95%, ${lightness}%, ${alpha})`;
+
+          ctx.fillText(randomGlyph(), x, y);
+        }
+
+        ctx.filter = "none";
+
+        if (!reducedMotion.matches) {
+          stream.y += stream.speed * delta / 1000;
+
+          if (stream.y - stream.trail * stream.gap > height + stream.size) {
+            stream.y = -stream.size * (1 + Math.random() * 16);
+            stream.speed = stream.size * (0.9 + Math.random() * 2.4);
+          }
+        }
+      }
+
+      function draw(now, singleFrame = false) {
+        const delta = Math.min(42, Math.max(10, now - previousTime || 16));
+        previousTime = now || previousTime;
+        const reveal = wordProgress(now);
+
+        /* A low-opacity clear fades individual glyphs naturally without bands. */
+        ctx.fillStyle = reducedMotion.matches
+          ? "rgba(0, 8, 4, 1)"
+          : "rgba(0, 8, 4, 0.19)";
+        ctx.fillRect(0, 0, width, height);
+
+        for (const stream of streams) {
+          drawStream(stream, delta, reveal);
+        }
+
+        if (!singleFrame && !reducedMotion.matches) {
+          animationFrame = requestAnimationFrame(draw);
+        }
+      }
+
+      gateway.addEventListener("pointerenter", () => hover = true);
+      gateway.addEventListener("pointerleave", () => hover = false);
+      gateway.addEventListener("focus", () => hover = true);
+      gateway.addEventListener("blur", () => hover = false);
+
+      reducedMotion.addEventListener("change", () => {
+        cancelAnimationFrame(animationFrame);
+        previousTime = 0;
+        startedAt = performance.now();
+        resize();
+
+        if (!reducedMotion.matches) {
+          animationFrame = requestAnimationFrame(draw);
+        }
+      });
+
+      window.addEventListener("resize", resize, { passive: true });
+
+      startedAt = performance.now();
+      resize();
+
+      if (!reducedMotion.matches) {
+        animationFrame = requestAnimationFrame(draw);
+      }
     })();
   </script>
 </body>
