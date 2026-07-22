@@ -75,17 +75,19 @@
       let dpr = 1;
       let streams = [];
       let wordCells = [];
-      let finalWordCanvas;
+      let wordCanvas;
+      let wordCtx;
       let wordBounds;
       let previousTime = 0;
       let startedAt = 0;
+      let lastWordRender = 0;
       let hover = false;
       let frame;
 
       const clamp = (value, min, max) =>
         Math.max(min, Math.min(max, value));
 
-      const glyph = () =>
+      const randomGlyph = () =>
         glyphs[Math.floor(Math.random() * glyphs.length)];
 
       const hash = (x, y) => {
@@ -95,17 +97,17 @@
 
       function createStream(index, laneWidth) {
         const depth = Math.random();
-        const size = Math.round(9 + depth * 13);
+        const size = Math.round(6 + depth * 21);
 
         return {
-          x: index * laneWidth + (Math.random() - 0.5) * laneWidth * 0.55,
-          y: Math.random() * (height + 180) - 180,
+          x: index * laneWidth + (Math.random() - 0.5) * laneWidth * 0.7,
+          y: Math.random() * (height + 260) - 260,
           size,
-          speed: size * (0.8 + depth * 2.25),
-          length: Math.round(5 + depth * 8),
-          gap: size * (0.88 + Math.random() * 0.28),
-          alpha: 0.12 + depth * 0.5,
-          hue: 124 + Math.random() * 24,
+          speed: size * (0.48 + depth * 2.55) * (0.75 + Math.random() * 0.5),
+          length: Math.round(3 + depth * 9),
+          gap: size * (0.78 + Math.random() * 0.35),
+          alpha: 0.07 + depth * 0.62,
+          hue: 120 + Math.random() * 30,
           phase: Math.random() * Math.PI * 2
         };
       }
@@ -150,59 +152,40 @@
           maskCanvas.height
         ).data;
 
-        const cellSize = clamp(Math.round(fontSize / 18), 7, 12);
+        const cellSize = clamp(Math.round(fontSize / 19), 7, 12);
         wordCells = [];
 
-        for (let cy = 0; cy < fontSize; cy += cellSize) {
-          for (let cx = 0; cx < wordWidth; cx += cellSize) {
+        for (let y = 0; y < fontSize; y += cellSize) {
+          for (let x = 0; x < wordWidth; x += cellSize) {
             const sampleX = clamp(
-              Math.round(cx + cellSize / 2),
+              Math.round(x + cellSize / 2),
               0,
               maskCanvas.width - 1
             );
             const sampleY = clamp(
-              Math.round(cy + cellSize / 2),
+              Math.round(y + cellSize / 2),
               0,
               maskCanvas.height - 1
             );
 
             if (mask[(sampleY * maskCanvas.width + sampleX) * 4 + 3] > 40) {
               wordCells.push({
-                x: cx,
-                y: cy,
+                x,
+                y,
                 size: cellSize + Math.round(Math.random() * 2),
-                char: glyph(),
-                threshold: hash(cx, cy),
-                brightness: 65 + Math.round(Math.random() * 28)
+                char: randomGlyph(),
+                revealAt: hash(x, y),
+                phase: Math.random() * Math.PI * 2,
+                brightness: 66 + Math.random() * 24
               });
             }
           }
         }
 
-        /* Cached final layer: no repeated word construction after emergence. */
-        finalWordCanvas = document.createElement("canvas");
-        finalWordCanvas.width = Math.ceil(wordWidth);
-        finalWordCanvas.height = Math.ceil(fontSize);
-
-        const finalCtx = finalWordCanvas.getContext("2d");
-
-        finalCtx.textAlign = "center";
-        finalCtx.textBaseline = "middle";
-        finalCtx.font = `900 ${fontSize}px Arial Black, Arial, sans-serif`;
-        finalCtx.fillStyle = "rgba(74, 255, 137, 0.15)";
-        finalCtx.fillText(
-          "zarza",
-          wordWidth / 2,
-          fontSize / 2 + fontSize * 0.035
-        );
-
-        for (const cell of wordCells) {
-          finalCtx.font =
-            `${cell.size}px ui-monospace, SFMono-Regular, Consolas, monospace`;
-          finalCtx.textBaseline = "top";
-          finalCtx.fillStyle = `hsla(138, 100%, ${cell.brightness}%, 0.9)`;
-          finalCtx.fillText(cell.char, cell.x, cell.y);
-        }
+        wordCanvas = document.createElement("canvas");
+        wordCanvas.width = Math.ceil(wordWidth);
+        wordCanvas.height = Math.ceil(fontSize);
+        wordCtx = wordCanvas.getContext("2d");
       }
 
       function resize() {
@@ -216,17 +199,19 @@
         ctx.fillStyle = "#000804";
         ctx.fillRect(0, 0, width, height);
 
-        const laneWidth = clamp(Math.round(width / 105), 12, 19);
-        const streamCount = Math.ceil(width / laneWidth) + 3;
+        /* More independent rain columns than the previous version. */
+        const laneWidth = clamp(Math.round(width / 190), 7, 11);
+        const streamCount = Math.ceil(width / laneWidth) + 4;
 
         streams = Array.from(
           { length: streamCount },
-          (_, index) => createStream(index - 1, laneWidth)
+          (_, index) => createStream(index - 2, laneWidth)
         );
 
         createWord();
 
         if (reducedMotion.matches) {
+          renderWord(1, 0, true);
           draw(0, true);
         }
       }
@@ -234,10 +219,52 @@
       function materializationProgress(now) {
         if (reducedMotion.matches) return 1;
 
-        const delay = 1300;
-        const duration = 2200;
+        const delay = 1550;
+        const duration = 4600;
 
         return clamp((now - startedAt - delay) / duration, 0, 1);
+      }
+
+      function renderWord(progress, now, force = false) {
+        const interval = progress < 1 ? 70 : 110;
+
+        if (!force && now - lastWordRender < interval) return;
+        lastWordRender = now;
+
+        wordCtx.clearRect(0, 0, wordCanvas.width, wordCanvas.height);
+        wordCtx.textBaseline = "top";
+        wordCtx.shadowColor = "rgba(74, 255, 137, 0.75)";
+        wordCtx.shadowBlur = progress > 0.75 ? 7 : 4;
+
+        for (const cell of wordCells) {
+          /*
+           * Each cell is assigned once and never moves or gets replaced.
+           * It only gains brightness, then keeps a subtle independent pulse.
+           */
+          const reveal = clamp(
+            (progress - cell.revealAt * 0.78) / 0.22,
+            0,
+            1
+          );
+
+          if (reveal <= 0) continue;
+
+          const twinkle = 0.84 +
+            0.16 * ((Math.sin(now * 0.003 + cell.phase) + 1) / 2);
+
+          const alpha = (0.12 + reveal * 0.82) * twinkle;
+          const lightness =
+            (35 + reveal * (cell.brightness - 35)) * twinkle;
+
+          wordCtx.font =
+            `${cell.size}px ui-monospace, SFMono-Regular, Consolas, monospace`;
+          wordCtx.fillStyle =
+            `hsla(138, 100%, ${lightness}%, ${hover ? Math.min(1, alpha + 0.1) : alpha})`;
+
+          wordCtx.fillText(cell.char, cell.x, cell.y);
+        }
+
+        wordCtx.shadowBlur = 0;
       }
 
       function drawRain(delta) {
@@ -245,7 +272,7 @@
 
         for (const stream of streams) {
           const drift =
-            Math.sin(previousTime * 0.00055 + stream.phase) * 0.65;
+            Math.sin(previousTime * 0.00055 + stream.phase) * 0.85;
 
           ctx.font =
             `${stream.size}px ui-monospace, SFMono-Regular, Consolas, monospace`;
@@ -256,81 +283,28 @@
             if (y < -stream.size || y > height + stream.size) continue;
 
             const tail = Math.pow(1 - index / stream.length, 1.8);
-            const head = index === 0 ? 0.22 : 0;
-            const lightness = 27 + tail * 37 + (index === 0 ? 17 : 0);
-            const alpha = Math.min(0.93, stream.alpha * tail + head);
+            const isHead = index === 0;
+            const lightness = 24 + tail * 39 + (isHead ? 17 : 0);
+            const alpha = Math.min(
+              0.94,
+              stream.alpha * tail + (isHead ? 0.18 : 0)
+            );
 
             ctx.fillStyle =
               `hsla(${stream.hue}, 92%, ${lightness}%, ${alpha})`;
 
-            ctx.fillText(
-              glyph(),
-              stream.x + drift,
-              y
-            );
+            ctx.fillText(randomGlyph(), stream.x + drift, y);
           }
 
           stream.y += stream.speed * delta / 1000;
 
           if (stream.y - stream.length * stream.gap > height + stream.size) {
-            stream.y = -stream.size * (2 + Math.random() * 12);
-            stream.speed = stream.size * (0.8 + Math.random() * 2.25);
+            stream.y = -stream.size * (2 + Math.random() * 14);
+            stream.speed =
+              stream.size *
+              (0.48 + Math.random() * 2.55) *
+              (0.75 + Math.random() * 0.5);
           }
-        }
-      }
-
-      function drawEmergingWord(progress) {
-        if (progress <= 0) return;
-
-        const { x, y } = wordBounds;
-
-        if (progress >= 1) {
-          ctx.save();
-          ctx.globalAlpha = hover ? 1 : 0.94;
-          ctx.drawImage(finalWordCanvas, x, y);
-          ctx.restore();
-          return;
-        }
-
-        /* Temporary per-cell drawing only during the short emergence period. */
-        const reveal = progress * 1.45;
-
-        for (const cell of wordCells) {
-          if (cell.threshold > reveal) continue;
-
-          const localProgress = clamp(
-            (reveal - cell.threshold) / 0.35,
-            0,
-            1
-          );
-
-          ctx.font =
-            `${cell.size}px ui-monospace, SFMono-Regular, Consolas, monospace`;
-          ctx.textBaseline = "top";
-          ctx.fillStyle =
-            `hsla(138, 100%, ${cell.brightness + 4}%, ${0.25 + localProgress * 0.72})`;
-
-          ctx.fillText(
-            localProgress > 0.68 ? cell.char : glyph(),
-            x + cell.x,
-            y + cell.y
-          );
-        }
-
-        /* A subtle silhouette improves readability as the word settles in. */
-        if (progress > 0.62) {
-          ctx.save();
-          ctx.globalAlpha = (progress - 0.62) * 0.28;
-          ctx.font = `900 ${wordBounds.height}px Arial Black, Arial, sans-serif`;
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillStyle = "#56ff91";
-          ctx.fillText(
-            "zarza",
-            x + wordBounds.width / 2,
-            y + wordBounds.height / 2 + wordBounds.height * 0.035
-          );
-          ctx.restore();
         }
       }
 
@@ -340,17 +314,23 @@
 
         ctx.fillStyle = reducedMotion.matches
           ? "#000804"
-          : "rgba(0, 8, 4, 0.23)";
+          : "rgba(0, 8, 4, 0.22)";
         ctx.fillRect(0, 0, width, height);
 
         if (reducedMotion.matches) {
-          for (const stream of streams) {
+          streams.forEach(stream => {
             stream.y = Math.random() * height;
-          }
+          });
         }
 
         drawRain(reducedMotion.matches ? 0 : delta);
-        drawEmergingWord(materializationProgress(now));
+
+        const progress = materializationProgress(now);
+        renderWord(progress, now);
+
+        if (progress > 0) {
+          ctx.drawImage(wordCanvas, wordBounds.x, wordBounds.y);
+        }
 
         if (!singleFrame && !reducedMotion.matches) {
           frame = requestAnimationFrame(draw);
@@ -366,6 +346,7 @@
         cancelAnimationFrame(frame);
         previousTime = 0;
         startedAt = performance.now();
+        lastWordRender = 0;
         resize();
 
         if (!reducedMotion.matches) {
