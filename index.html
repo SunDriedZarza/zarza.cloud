@@ -8,55 +8,17 @@
   <title>zarza</title>
   <style>
     * { box-sizing: border-box; }
-
-    html, body {
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      overflow: hidden;
-      background: #000804;
-    }
-
-    canvas {
-      display: block;
-      width: 100%;
-      height: 100%;
-    }
-
-    #gateway {
-      position: fixed;
-      z-index: 1;
-      display: block;
-      color: transparent;
-      text-decoration: none;
-      cursor: pointer;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    #gateway:focus-visible {
-      outline: 1px solid #8dffab;
-      outline-offset: 10px;
-    }
-
-    .sr-only {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      margin: -1px;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      white-space: nowrap;
-    }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000804; }
+    canvas { display: block; width: 100%; height: 100%; }
+    #gateway { position: fixed; z-index: 1; display: block; color: transparent; text-decoration: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    #gateway:focus-visible { outline: 1px solid #8dffab; outline-offset: 10px; }
+    .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
   </style>
 </head>
 <body>
   <canvas id="rain" aria-hidden="true"></canvas>
 
-  <a
-    id="gateway"
-    href="https://zarza-cloud.cloudflareaccess.com/#/Launcher"
-    aria-label="Open Zarza"
-  >
+  <a id="gateway" href="https://zarza-cloud.cloudflareaccess.com/#/Launcher" aria-label="Open Zarza">
     <span class="sr-only">Open Zarza</span>
   </a>
 
@@ -66,30 +28,15 @@
       const ctx = canvas.getContext("2d", { alpha: false });
       const gateway = document.querySelector("#gateway");
       const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+      const glyphs = "ZARZA0123456789<>[]{}()=+*:/\\|;,.~!@#$%^&?アイウエオカキクケコサシスセソ你好世界天地人語文ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩЖДИЙКЛМНОПРСТУФХЦЧШЩЫЭЮЯ";
 
-      const glyphs =
-        "ZARZA0123456789<>[]{}()=+*:/\\|;,.~!@#$%^&?アイウエオカキクケコサシスセソ你好世界天地人語文ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩЖДИЙКЛМНОПРСТУФХЦЧШЩЫЭЮЯ";
+      let width = 0, height = 0, dpr = 1;
+      let streams = [], wordCells = [], wordCanvas, wordCtx, wordBounds;
+      let previousTime = 0, startedAt = 0, lastWordRender = 0;
+      let lastGlyphChange = 0, hover = false, frame;
 
-      let width = 0;
-      let height = 0;
-      let dpr = 1;
-      let streams = [];
-      let wordCells = [];
-      let wordCanvas;
-      let wordCtx;
-      let wordBounds;
-      let previousTime = 0;
-      let startedAt = 0;
-      let lastWordRender = 0;
-      let hover = false;
-      let frame;
-
-      const clamp = (value, min, max) =>
-        Math.max(min, Math.min(max, value));
-
-      const randomGlyph = () =>
-        glyphs[Math.floor(Math.random() * glyphs.length)];
-
+      const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+      const randomGlyph = () => glyphs[Math.floor(Math.random() * glyphs.length)];
       const hash = (x, y) => {
         const value = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
         return value - Math.floor(value);
@@ -112,6 +59,29 @@
         };
       }
 
+      function drawZarzaText(target, wordWidth, fontSize) {
+        const letters = ["z", "a", "r", "z", "a"];
+        const extraGap = fontSize * 0.055;
+        const baseline = target.canvas.height / 2 + fontSize * 0.035;
+
+        target.font = `900 ${fontSize}px Arial Black, Arial, sans-serif`;
+        target.textAlign = "left";
+        target.textBaseline = "middle";
+
+        const letterWidths = letters.map(letter => target.measureText(letter).width);
+        const totalWidth = letterWidths.reduce((sum, value) => sum + value, 0) + extraGap;
+
+        let x = (wordWidth - totalWidth) / 2;
+
+        letters.forEach((letter, index) => {
+          target.fillText(letter, x, baseline);
+          x += letterWidths[index];
+
+          /* Slight separation only between the r and second z. */
+          if (index === 2) x += extraGap;
+        });
+      }
+
       function createWord() {
         const wordWidth = Math.min(width * 0.82, 1120);
         const fontSize = Math.round(Math.min(height * 0.29, wordWidth * 0.235));
@@ -131,42 +101,18 @@
         maskCanvas.width = Math.ceil(wordWidth);
         maskCanvas.height = Math.ceil(fontSize);
 
-        const maskCtx = maskCanvas.getContext("2d", {
-          willReadFrequently: true
-        });
-
+        const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
         maskCtx.fillStyle = "#fff";
-        maskCtx.textAlign = "center";
-        maskCtx.textBaseline = "middle";
-        maskCtx.font = `900 ${fontSize}px Arial Black, Arial, sans-serif`;
-        maskCtx.fillText(
-          "zarza",
-          wordWidth / 2,
-          fontSize / 2 + fontSize * 0.035
-        );
+        drawZarzaText(maskCtx, wordWidth, fontSize);
 
-        const mask = maskCtx.getImageData(
-          0,
-          0,
-          maskCanvas.width,
-          maskCanvas.height
-        ).data;
-
+        const mask = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height).data;
         const cellSize = clamp(Math.round(fontSize / 19), 7, 12);
         wordCells = [];
 
         for (let y = 0; y < fontSize; y += cellSize) {
           for (let x = 0; x < wordWidth; x += cellSize) {
-            const sampleX = clamp(
-              Math.round(x + cellSize / 2),
-              0,
-              maskCanvas.width - 1
-            );
-            const sampleY = clamp(
-              Math.round(y + cellSize / 2),
-              0,
-              maskCanvas.height - 1
-            );
+            const sampleX = clamp(Math.round(x + cellSize / 2), 0, maskCanvas.width - 1);
+            const sampleY = clamp(Math.round(y + cellSize / 2), 0, maskCanvas.height - 1);
 
             if (mask[(sampleY * maskCanvas.width + sampleX) * 4 + 3] > 40) {
               wordCells.push({
@@ -190,23 +136,16 @@
 
       function resize() {
         dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-        width = window.innerWidth;
-        height = window.innerHeight;
+        width = innerWidth;
+        height = innerHeight;
 
         canvas.width = Math.round(width * dpr);
         canvas.height = Math.round(height * dpr);
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.fillStyle = "#000804";
-        ctx.fillRect(0, 0, width, height);
 
-        /* More independent rain columns than the previous version. */
         const laneWidth = clamp(Math.round(width / 190), 7, 11);
         const streamCount = Math.ceil(width / laneWidth) + 4;
-
-        streams = Array.from(
-          { length: streamCount },
-          (_, index) => createStream(index - 2, laneWidth)
-        );
+        streams = Array.from({ length: streamCount }, (_, index) => createStream(index - 2, laneWidth));
 
         createWord();
 
@@ -218,18 +157,28 @@
 
       function materializationProgress(now) {
         if (reducedMotion.matches) return 1;
+        return clamp((now - startedAt - 1550) / 4600, 0, 1);
+      }
 
-        const delay = 1550;
-        const duration = 4600;
+      function cycleSettledGlyphs(progress, now) {
+        if (progress < 0.72 || now - lastGlyphChange < 300) return;
 
-        return clamp((now - startedAt - delay) / duration, 0, 1);
+        lastGlyphChange = now;
+
+        /* Only a few glyphs change at once, preserving legibility. */
+        for (const cell of wordCells) {
+          if (Math.random() < 0.018) {
+            cell.char = randomGlyph();
+          }
+        }
       }
 
       function renderWord(progress, now, force = false) {
         const interval = progress < 1 ? 70 : 110;
-
         if (!force && now - lastWordRender < interval) return;
+
         lastWordRender = now;
+        cycleSettledGlyphs(progress, now);
 
         wordCtx.clearRect(0, 0, wordCanvas.width, wordCanvas.height);
         wordCtx.textBaseline = "top";
@@ -237,30 +186,15 @@
         wordCtx.shadowBlur = progress > 0.75 ? 7 : 4;
 
         for (const cell of wordCells) {
-          /*
-           * Each cell is assigned once and never moves or gets replaced.
-           * It only gains brightness, then keeps a subtle independent pulse.
-           */
-          const reveal = clamp(
-            (progress - cell.revealAt * 0.78) / 0.22,
-            0,
-            1
-          );
-
+          const reveal = clamp((progress - cell.revealAt * 0.78) / 0.22, 0, 1);
           if (reveal <= 0) continue;
 
-          const twinkle = 0.84 +
-            0.16 * ((Math.sin(now * 0.003 + cell.phase) + 1) / 2);
-
+          const twinkle = 0.84 + 0.16 * ((Math.sin(now * 0.003 + cell.phase) + 1) / 2);
           const alpha = (0.12 + reveal * 0.82) * twinkle;
-          const lightness =
-            (35 + reveal * (cell.brightness - 35)) * twinkle;
+          const lightness = (35 + reveal * (cell.brightness - 35)) * twinkle;
 
-          wordCtx.font =
-            `${cell.size}px ui-monospace, SFMono-Regular, Consolas, monospace`;
-          wordCtx.fillStyle =
-            `hsla(138, 100%, ${lightness}%, ${hover ? Math.min(1, alpha + 0.1) : alpha})`;
-
+          wordCtx.font = `${cell.size}px ui-monospace, SFMono-Regular, Consolas, monospace`;
+          wordCtx.fillStyle = `hsla(138, 100%, ${lightness}%, ${hover ? Math.min(1, alpha + 0.1) : alpha})`;
           wordCtx.fillText(cell.char, cell.x, cell.y);
         }
 
@@ -271,28 +205,20 @@
         ctx.textBaseline = "top";
 
         for (const stream of streams) {
-          const drift =
-            Math.sin(previousTime * 0.00055 + stream.phase) * 0.85;
+          const drift = Math.sin(previousTime * 0.00055 + stream.phase) * 0.85;
 
-          ctx.font =
-            `${stream.size}px ui-monospace, SFMono-Regular, Consolas, monospace`;
+          ctx.font = `${stream.size}px ui-monospace, SFMono-Regular, Consolas, monospace`;
 
           for (let index = 0; index < stream.length; index++) {
             const y = stream.y - index * stream.gap;
-
             if (y < -stream.size || y > height + stream.size) continue;
 
             const tail = Math.pow(1 - index / stream.length, 1.8);
-            const isHead = index === 0;
-            const lightness = 24 + tail * 39 + (isHead ? 17 : 0);
-            const alpha = Math.min(
-              0.94,
-              stream.alpha * tail + (isHead ? 0.18 : 0)
-            );
+            const head = index === 0;
+            const lightness = 24 + tail * 39 + (head ? 17 : 0);
+            const alpha = Math.min(0.94, stream.alpha * tail + (head ? 0.18 : 0));
 
-            ctx.fillStyle =
-              `hsla(${stream.hue}, 92%, ${lightness}%, ${alpha})`;
-
+            ctx.fillStyle = `hsla(${stream.hue}, 92%, ${lightness}%, ${alpha})`;
             ctx.fillText(randomGlyph(), stream.x + drift, y);
           }
 
@@ -300,10 +226,7 @@
 
           if (stream.y - stream.length * stream.gap > height + stream.size) {
             stream.y = -stream.size * (2 + Math.random() * 14);
-            stream.speed =
-              stream.size *
-              (0.48 + Math.random() * 2.55) *
-              (0.75 + Math.random() * 0.5);
+            stream.speed = stream.size * (0.48 + Math.random() * 2.55) * (0.75 + Math.random() * 0.5);
           }
         }
       }
@@ -312,15 +235,11 @@
         const delta = Math.min(40, Math.max(12, now - previousTime || 16));
         previousTime = now || previousTime;
 
-        ctx.fillStyle = reducedMotion.matches
-          ? "#000804"
-          : "rgba(0, 8, 4, 0.22)";
+        ctx.fillStyle = reducedMotion.matches ? "#000804" : "rgba(0, 8, 4, 0.22)";
         ctx.fillRect(0, 0, width, height);
 
         if (reducedMotion.matches) {
-          streams.forEach(stream => {
-            stream.y = Math.random() * height;
-          });
+          streams.forEach(stream => stream.y = Math.random() * height);
         }
 
         drawRain(reducedMotion.matches ? 0 : delta);
@@ -347,6 +266,7 @@
         previousTime = 0;
         startedAt = performance.now();
         lastWordRender = 0;
+        lastGlyphChange = 0;
         resize();
 
         if (!reducedMotion.matches) {
@@ -354,7 +274,7 @@
         }
       });
 
-      window.addEventListener("resize", resize, { passive: true });
+      addEventListener("resize", resize, { passive: true });
 
       startedAt = performance.now();
       resize();
